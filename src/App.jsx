@@ -70,18 +70,27 @@ function BuyModal({ game, onClose }) {
 }
 
 function AdminPanel({ onBack }) {
+  const [tab, setTab] = useState('games')
   const [games, setGames] = useState([])
+  const [orders, setOrders] = useState([])
   const [form, setForm] = useState({ title: '', description: '', price: '', platform: 'PC', category: '', images: '' })
   const [status, setStatus] = useState('')
   const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
   const token = localStorage.getItem('token')
 
-  const fetchAll = async () => {
+  const fetchAllGames = async () => {
     const res = await fetch(`${baseUrl}/games/all`, { headers: { Authorization: `Bearer ${token}` } })
     const data = await res.json()
     setGames(data)
   }
-  useEffect(() => { fetchAll() }, [])
+
+  const fetchOrders = async () => {
+    const res = await fetch(`${baseUrl}/orders`, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await res.json()
+    setOrders(data)
+  }
+
+  useEffect(() => { fetchAllGames(); fetchOrders() }, [])
 
   const addGame = async (e) => {
     e.preventDefault()
@@ -93,7 +102,7 @@ function AdminPanel({ onBack }) {
       if (!res.ok) throw new Error(data?.detail || 'Failed to add')
       setStatus('Game added')
       setForm({ title: '', description: '', price: '', platform: 'PC', category: '', images: '' })
-      fetchAll()
+      fetchAllGames()
     } catch (e) {
       setStatus(e.message)
     }
@@ -106,12 +115,22 @@ function AdminPanel({ onBack }) {
       body: JSON.stringify({ is_active: !g.is_active })
     })
     await res.json()
-    fetchAll()
+    fetchAllGames()
   }
 
   const removeGame = async (g) => {
     await fetch(`${baseUrl}/games/${g.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-    fetchAll()
+    fetchAllGames()
+  }
+
+  const setOrderStatus = async (order, next) => {
+    const res = await fetch(`${baseUrl}/orders/${order.id}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: next })
+    })
+    await res.json()
+    fetchOrders()
   }
 
   return (
@@ -121,40 +140,78 @@ function AdminPanel({ onBack }) {
         <button onClick={onBack} className="px-3 py-2 rounded bg-gray-200">Back</button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <form onSubmit={addGame} className="bg-white rounded-lg shadow p-4 space-y-3">
-          <h3 className="font-semibold">Add new game</h3>
-          <input placeholder="Title" className="w-full border rounded px-3 py-2" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
-          <textarea placeholder="Description" className="w-full border rounded px-3 py-2" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
-          <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Price" className="w-full border rounded px-3 py-2" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
-            <select className="w-full border rounded px-3 py-2" value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })}>
-              <option>PC</option>
-              <option>Mobile</option>
-            </select>
-          </div>
-          <input placeholder="Category" className="w-full border rounded px-3 py-2" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
-          <input placeholder="Image URLs (comma separated)" className="w-full border rounded px-3 py-2" value={form.images} onChange={e => setForm({ ...form, images: e.target.value })} />
-          {status && <p className="text-sm">{status}</p>}
-          <button className="w-full bg-purple-600 text-white rounded py-2">Add Game</button>
-        </form>
+      <div className="mb-4 flex items-center gap-2">
+        <button onClick={() => setTab('games')} className={`px-3 py-2 rounded ${tab==='games' ? 'bg-purple-600 text-white' : 'bg-gray-100'}`}>Games</button>
+        <button onClick={() => setTab('orders')} className={`px-3 py-2 rounded ${tab==='orders' ? 'bg-purple-600 text-white' : 'bg-gray-100'}`}>Orders</button>
+      </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="font-semibold mb-3">All games</h3>
-          <div className="space-y-3 max-h-[480px] overflow-auto">
-            {games.map(g => (
-              <div key={g.id} className="border rounded p-3 flex items-center gap-3">
-                <div className="flex-1">
-                  <p className="font-medium">{g.title}</p>
-                  <p className="text-sm text-gray-600">৳ {g.price} • {g.platform}</p>
+      {tab === 'games' && (
+        <div className="grid md:grid-cols-2 gap-6">
+          <form onSubmit={addGame} className="bg-white rounded-lg shadow p-4 space-y-3">
+            <h3 className="font-semibold">Add new game</h3>
+            <input placeholder="Title" className="w-full border rounded px-3 py-2" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
+            <textarea placeholder="Description" className="w-full border rounded px-3 py-2" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Price" className="w-full border rounded px-3 py-2" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
+              <select className="w-full border rounded px-3 py-2" value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })}>
+                <option>PC</option>
+                <option>Mobile</option>
+              </select>
+            </div>
+            <input placeholder="Category" className="w-full border rounded px-3 py-2" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
+            <input placeholder="Image URLs (comma separated)" className="w-full border rounded px-3 py-2" value={form.images} onChange={e => setForm({ ...form, images: e.target.value })} />
+            {status && <p className="text-sm">{status}</p>}
+            <button className="w-full bg-purple-600 text-white rounded py-2">Add Game</button>
+          </form>
+
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="font-semibold mb-3">All games</h3>
+            <div className="space-y-3 max-h-[480px] overflow-auto">
+              {games.map(g => (
+                <div key={g.id} className="border rounded p-3 flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="font-medium">{g.title}</p>
+                    <p className="text-sm text-gray-600">৳ {g.price} • {g.platform}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded ${g.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{g.is_active ? 'Active' : 'Inactive'}</span>
+                  <button onClick={() => toggleActive(g)} className={`px-3 py-1 rounded ${g.is_active ? 'bg-yellow-500 text-white' : 'bg-green-600 text-white'}`}>{g.is_active ? 'Deactivate' : 'Activate'}</button>
+                  <button onClick={() => removeGame(g)} className="px-3 py-1 rounded bg-red-600 text-white">Delete</button>
                 </div>
-                <button onClick={() => toggleActive(g)} className={`px-3 py-1 rounded ${g.is_active ? 'bg-yellow-500 text-white' : 'bg-green-600 text-white'}`}>{g.is_active ? 'Deactivate' : 'Activate'}</button>
-                <button onClick={() => removeGame(g)} className="px-3 py-1 rounded bg-red-600 text-white">Delete</button>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {tab === 'orders' && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="font-semibold mb-3">Recent orders</h3>
+          <div className="space-y-3 max-h-[600px] overflow-auto">
+            {orders.map(o => (
+              <div key={o.id} className="border rounded p-3 grid md:grid-cols-5 gap-3 items-center">
+                <div className="md:col-span-2">
+                  <p className="font-medium">{o.game_id}</p>
+                  <p className="text-sm text-gray-600">{o.email_for_delivery}</p>
+                </div>
+                <div>
+                  <p className="text-sm">Nagad: {o.nagad_number}</p>
+                  <p className="text-sm">Txn: {o.transaction_id}</p>
+                </div>
+                <div>
+                  <span className={`text-xs px-2 py-1 rounded ${o.status === 'completed' ? 'bg-green-100 text-green-700' : o.status === 'canceled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{o.status}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setOrderStatus(o, 'completed')} className="px-3 py-1 rounded bg-green-600 text-white">Complete</button>
+                  <button onClick={() => setOrderStatus(o, 'canceled')} className="px-3 py-1 rounded bg-red-600 text-white">Cancel</button>
+                </div>
+              </div>
+            ))}
+            {orders.length === 0 && (
+              <p className="text-sm text-gray-600">No orders yet.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
