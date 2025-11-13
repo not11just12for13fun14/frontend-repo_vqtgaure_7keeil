@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Navbar from './components/Navbar'
 import GameCard from './components/GameCard'
 import AuthForm from './components/AuthForm'
+import AuthPage from './components/AuthPage'
 
 function Section({ title, children }) {
   return (
@@ -192,11 +193,8 @@ export default function App() {
   }
 
   const content = useMemo(() => {
-    if (view === 'login') return (
-      <div className="min-h-[60vh] flex items-center justify-center gap-6">
-        <AuthForm onSuccess={({ user }) => { setUser(user); setView('home') }} mode="login" />
-        <AuthForm onSuccess={({ user }) => { setUser(user); setView('home') }} mode="register" />
-      </div>
+    if (view === 'auth') return (
+      <AuthPage onSuccess={({ user }) => { setUser(user); setView('home') }} />
     )
 
     if (view === 'admin') {
@@ -208,7 +206,7 @@ export default function App() {
       <>
         <div className="max-w-6xl mx-auto px-4 py-8">
           <div className="rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 text-white p-8">
-            <h1 className="text-3xl font-bold">Buy PC & Mobile Games</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight">RS GAME GHOR</h1>
             <p className="text-white/90 mt-2">Pay with Nagad Send Money, submit Transaction ID, and receive your game within 2 hours via email.</p>
           </div>
         </div>
