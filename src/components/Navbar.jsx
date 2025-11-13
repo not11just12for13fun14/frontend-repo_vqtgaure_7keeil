@@ -4,9 +4,9 @@ export default function Navbar({ user, onLogout, onNav }) {
   return (
     <header className="sticky top-0 z-40 bg-white/70 backdrop-blur border-b">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <button onClick={() => onNav('home')} className="flex items-center gap-2 font-bold text-xl">
+        <button onClick={() => onNav('home')} className="flex items-center gap-2 font-black text-xl tracking-tight">
           <Store className="w-6 h-6 text-purple-600" />
-          <span>GameZone</span>
+          <span className="bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">RS GAME GHOR</span>
         </button>
         <nav className="flex items-center gap-3">
           <button onClick={() => onNav('pc')} className="px-3 py-2 rounded hover:bg-gray-100">PC</button>
@@ -17,7 +17,7 @@ export default function Navbar({ user, onLogout, onNav }) {
             </button>
           )}
           {!user ? (
-            <button onClick={() => onNav('login')} className="px-3 py-2 rounded bg-blue-600 text-white flex items-center gap-1">
+            <button onClick={() => onNav('auth')} className="px-3 py-2 rounded bg-blue-600 text-white flex items-center gap-1">
               <LogIn className="w-4 h-4" /> Login
             </button>
           ) : (
