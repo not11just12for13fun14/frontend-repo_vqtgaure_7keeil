@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Navbar from './components/Navbar'
 import GameCard from './components/GameCard'
-import AuthForm from './components/AuthForm'
 import AuthPage from './components/AuthPage'
 
 function Section({ title, children }) {
@@ -75,17 +74,23 @@ function AdminPanel({ onBack }) {
   const [orders, setOrders] = useState([])
   const [form, setForm] = useState({ title: '', description: '', price: '', platform: 'PC', category: '', images: '' })
   const [status, setStatus] = useState('')
+  const [uploadPreview, setUploadPreview] = useState([])
+  const [editing, setEditing] = useState(null) // current game object
+  const [filters, setFilters] = useState({ platform: 'all', q: '' })
+
   const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
   const token = localStorage.getItem('token')
 
+  const authHeader = { Authorization: `Bearer ${token}` }
+
   const fetchAllGames = async () => {
-    const res = await fetch(`${baseUrl}/games/all`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await fetch(`${baseUrl}/games/all`, { headers: authHeader })
     const data = await res.json()
     setGames(data)
   }
 
   const fetchOrders = async () => {
-    const res = await fetch(`${baseUrl}/orders`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await fetch(`${baseUrl}/orders`, { headers: authHeader })
     const data = await res.json()
     setOrders(data)
   }
@@ -96,13 +101,35 @@ function AdminPanel({ onBack }) {
     e.preventDefault()
     setStatus('')
     try {
-      const payload = { ...form, price: parseFloat(form.price || '0'), images: form.images ? form.images.split(',').map(s => s.trim()) : [] }
-      const res = await fetch(`${baseUrl}/games`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) })
+      const payload = { ...form, price: parseFloat(form.price || '0'), images: form.images ? form.images.split(',').map(s => s.trim()).filter(Boolean) : [] }
+      const res = await fetch(`${baseUrl}/games`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader }, body: JSON.stringify(payload) })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || 'Failed to add')
       setStatus('Game added')
       setForm({ title: '', description: '', price: '', platform: 'PC', category: '', images: '' })
+      setUploadPreview([])
       fetchAllGames()
+    } catch (e) {
+      setStatus(e.message)
+    }
+  }
+
+  const uploadImages = async (files) => {
+    if (!files || files.length === 0) return
+    try {
+      setStatus('Uploading images...')
+      const fd = new FormData()
+      for (const f of files) fd.append('files', f)
+      const res = await fetch(`${baseUrl}/admin/upload-image`, { method: 'POST', headers: authHeader, body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || 'Upload failed')
+      const urls = data.urls || []
+      // Append to form.images
+      const current = form.images ? form.images.split(',').map(s => s.trim()).filter(Boolean) : []
+      const merged = [...current, ...urls]
+      setForm({ ...form, images: merged.join(', ') })
+      setUploadPreview(merged)
+      setStatus('Images uploaded')
     } catch (e) {
       setStatus(e.message)
     }
@@ -111,7 +138,7 @@ function AdminPanel({ onBack }) {
   const toggleActive = async (g) => {
     const res = await fetch(`${baseUrl}/games/${g.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader },
       body: JSON.stringify({ is_active: !g.is_active })
     })
     await res.json()
@@ -119,19 +146,45 @@ function AdminPanel({ onBack }) {
   }
 
   const removeGame = async (g) => {
-    await fetch(`${baseUrl}/games/${g.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    await fetch(`${baseUrl}/games/${g.id}`, { method: 'DELETE', headers: authHeader })
     fetchAllGames()
   }
 
   const setOrderStatus = async (order, next) => {
     const res = await fetch(`${baseUrl}/orders/${order.id}/status`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader },
       body: JSON.stringify({ status: next })
     })
     await res.json()
     fetchOrders()
   }
+
+  const openEdit = (g) => {
+    setEditing({ ...g })
+    setUploadPreview(g.images || [])
+  }
+
+  const saveEdit = async () => {
+    if (!editing) return
+    const payload = { title: editing.title, description: editing.description, price: editing.price, platform: editing.platform, category: editing.category, images: editing.images, is_active: editing.is_active }
+    const res = await fetch(`${baseUrl}/games/${editing.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeader }, body: JSON.stringify(payload) })
+    const data = await res.json()
+    if (!res.ok) {
+      setStatus(data?.detail || 'Update failed')
+      return
+    }
+    setEditing(null)
+    setStatus('Game updated')
+    fetchAllGames()
+  }
+
+  const filteredGames = games.filter(g => {
+    const byPlatform = filters.platform === 'all' ? true : (g.platform || '').toLowerCase() === filters.platform
+    const q = filters.q.trim().toLowerCase()
+    const byQ = !q || (g.title || '').toLowerCase().includes(q) || (g.category || '').toLowerCase().includes(q)
+    return byPlatform && byQ
+  })
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -146,7 +199,7 @@ function AdminPanel({ onBack }) {
       </div>
 
       {tab === 'games' && (
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid lg:grid-cols-2 gap-6">
           <form onSubmit={addGame} className="bg-white rounded-lg shadow p-4 space-y-3">
             <h3 className="font-semibold">Add new game</h3>
             <input placeholder="Title" className="w-full border rounded px-3 py-2" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
@@ -159,25 +212,57 @@ function AdminPanel({ onBack }) {
               </select>
             </div>
             <input placeholder="Category" className="w-full border rounded px-3 py-2" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
-            <input placeholder="Image URLs (comma separated)" className="w-full border rounded px-3 py-2" value={form.images} onChange={e => setForm({ ...form, images: e.target.value })} />
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">Images</label>
+              <input placeholder="Image URLs (comma separated)" className="w-full border rounded px-3 py-2" value={form.images} onChange={e => setForm({ ...form, images: e.target.value })} />
+              <div className="flex items-center gap-2">
+                <input id="imageFiles" type="file" multiple accept="image/*" onChange={e => uploadImages(e.target.files)} className="block w-full text-sm" />
+              </div>
+              {uploadPreview?.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {uploadPreview.map((u, i) => (
+                    <img key={i} src={u} alt="preview" className="w-full h-16 object-cover rounded" />
+                  ))}
+                </div>
+              )}
+            </div>
+
             {status && <p className="text-sm">{status}</p>}
             <button className="w-full bg-purple-600 text-white rounded py-2">Add Game</button>
           </form>
 
           <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-semibold mb-3">All games</h3>
-            <div className="space-y-3 max-h-[480px] overflow-auto">
-              {games.map(g => (
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">All games</h3>
+              <div className="flex items-center gap-2">
+                <select value={filters.platform} onChange={e => setFilters({ ...filters, platform: e.target.value.toLowerCase() })} className="border rounded px-2 py-1 text-sm">
+                  <option value="all">All</option>
+                  <option value="pc">PC</option>
+                  <option value="mobile">Mobile</option>
+                </select>
+                <input placeholder="Search title/category" className="border rounded px-2 py-1 text-sm" value={filters.q} onChange={e => setFilters({ ...filters, q: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-3 max-h-[520px] overflow-auto">
+              {filteredGames.map(g => (
                 <div key={g.id} className="border rounded p-3 flex items-center gap-3">
+                  <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden flex-shrink-0">
+                    {g.images?.[0] ? <img src={g.images[0]} alt={g.title} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No Image</div>}
+                  </div>
                   <div className="flex-1">
                     <p className="font-medium">{g.title}</p>
-                    <p className="text-sm text-gray-600">৳ {g.price} • {g.platform}</p>
+                    <p className="text-sm text-gray-600">৳ {g.price} • {g.platform} • {g.category || 'Uncategorized'}</p>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded ${g.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{g.is_active ? 'Active' : 'Inactive'}</span>
+                  <button onClick={() => openEdit(g)} className="px-3 py-1 rounded bg-blue-600 text-white">Edit</button>
                   <button onClick={() => toggleActive(g)} className={`px-3 py-1 rounded ${g.is_active ? 'bg-yellow-500 text-white' : 'bg-green-600 text-white'}`}>{g.is_active ? 'Deactivate' : 'Activate'}</button>
                   <button onClick={() => removeGame(g)} className="px-3 py-1 rounded bg-red-600 text-white">Delete</button>
                 </div>
               ))}
+              {filteredGames.length === 0 && (
+                <p className="text-sm text-gray-600">No games found.</p>
+              )}
             </div>
           </div>
         </div>
@@ -209,6 +294,60 @@ function AdminPanel({ onBack }) {
             {orders.length === 0 && (
               <p className="text-sm text-gray-600">No orders yet.</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow w-full max-w-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Edit: {editing.title}</h3>
+              <button onClick={() => setEditing(null)} className="text-gray-500">✕</button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <input className="border rounded px-3 py-2" placeholder="Title" value={editing.title} onChange={e => setEditing({ ...editing, title: e.target.value })} />
+              <input className="border rounded px-3 py-2" placeholder="Category" value={editing.category || ''} onChange={e => setEditing({ ...editing, category: e.target.value })} />
+              <textarea className="md:col-span-2 border rounded px-3 py-2" placeholder="Description" value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} />
+              <input className="border rounded px-3 py-2" placeholder="Price" value={editing.price} onChange={e => setEditing({ ...editing, price: parseFloat(e.target.value || '0') })} />
+              <select className="border rounded px-3 py-2" value={editing.platform} onChange={e => setEditing({ ...editing, platform: e.target.value })}>
+                <option>PC</option>
+                <option>Mobile</option>
+              </select>
+              <div className="md:col-span-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Images</span>
+                  <input type="file" multiple accept="image/*" onChange={async e => {
+                    const fd = new FormData();
+                    for (const f of e.target.files) fd.append('files', f)
+                    const res = await fetch(`${baseUrl}/admin/upload-image`, { method: 'POST', headers: authHeader, body: fd })
+                    const data = await res.json()
+                    if (res.ok) {
+                      const next = [ ...(editing.images || []), ...(data.urls || []) ]
+                      setEditing({ ...editing, images: next })
+                    }
+                  }} />
+                </div>
+                <div className="grid grid-cols-6 gap-2">
+                  {(editing.images || []).map((u, i) => (
+                    <div key={i} className="relative">
+                      <img src={u} className="w-full h-16 object-cover rounded" />
+                      <button type="button" className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 text-xs"
+                        onClick={() => setEditing({ ...editing, images: (editing.images || []).filter((_, idx) => idx !== i) })}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="md:col-span-2 flex items-center gap-2">
+                <label className="text-sm flex items-center gap-2">
+                  <input type="checkbox" checked={!!editing.is_active} onChange={e => setEditing({ ...editing, is_active: e.target.checked })} /> Active
+                </label>
+                <div className="ml-auto flex gap-2">
+                  <button onClick={() => setEditing(null)} className="px-3 py-2 rounded bg-gray-200">Cancel</button>
+                  <button onClick={saveEdit} className="px-3 py-2 rounded bg-blue-600 text-white">Save</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
